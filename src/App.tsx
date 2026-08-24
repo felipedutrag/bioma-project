@@ -1,122 +1,156 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useRef, useState, useCallback } from 'react';
+import './App.css';
+import { GameEngine } from './systems/GameEngine';
+import type { RadarEntity } from './systems/GameEngine';
+import type { PlayerStats, TraitModifiers, GameState } from './types/game';
+import { GeneStorage, DEFAULT_TRAITS } from './storage/GeneStorage';
+import { SoundSystem } from './audio/SoundSystem';
+import { HUD } from './ui/HUD';
+import { StartModal } from './ui/StartModal';
+import { MatingModal } from './ui/MatingModal';
+import { GameOverModal } from './ui/GameOverModal';
+import { FamilyTreeModal } from './ui/FamilyTreeModal';
 
-function App() {
-  const [count, setCount] = useState(0)
+export function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<GameEngine | null>(null);
+
+  const [hasStarted, setHasStarted] = useState(false);
+  const [gameState, setGameState] = useState<GameState>('START');
+  const [traits, setTraits] = useState<TraitModifiers>(DEFAULT_TRAITS);
+  const [radarEntities, setRadarEntities] = useState<RadarEntity[]>([]);
+  const [showGenealogy, setShowGenealogy] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  const [deathInfo, setDeathInfo] = useState<{ reason: string; lifespan: number }>({
+    reason: '',
+    lifespan: 0,
+  });
+
+  const [stats, setStats] = useState<PlayerStats>({
+    hunger: 90,
+    stamina: 100,
+    thirst: 90,
+    age: 10,
+    isHiding: 0,
+    noiseLevel: 0,
+    noiseRadius: 0,
+    isRunning: false,
+    isDrinking: false,
+    isEating: false,
+    canReproduce: false,
+    generation: 1,
+  });
+
+  const refreshStateFromStorage = useCallback(() => {
+    const save = GeneStorage.loadState();
+    setTraits(save.currentGenes);
+    setStats((prev) => ({ ...prev, generation: save.currentGeneration }));
+  }, []);
+
+  const handleStatsUpdate = useCallback((newStats: PlayerStats, radar: RadarEntity[]) => {
+    setStats(newStats);
+    setRadarEntities(radar);
+  }, []);
+
+  const handleGameOver = useCallback((reason: string, lifespan: number) => {
+    setDeathInfo({ reason, lifespan });
+    setGameState('DEAD');
+  }, []);
+
+  const handleMatingReady = useCallback(() => {
+    setGameState('MATING_SELECT');
+  }, []);
+
+  const initEngine = useCallback(() => {
+    if (!containerRef.current) return;
+
+    if (engineRef.current) {
+      engineRef.current.destroy();
+    }
+
+    refreshStateFromStorage();
+    const engine = new GameEngine(containerRef.current);
+    engine.onStatsUpdate = handleStatsUpdate;
+    engine.onGameOver = handleGameOver;
+    engine.onMatingReady = handleMatingReady;
+    engineRef.current = engine;
+    setGameState('PLAYING');
+  }, [refreshStateFromStorage, handleStatsUpdate, handleGameOver, handleMatingReady]);
+
+  const handleStartGame = () => {
+    setHasStarted(true);
+    initEngine();
+  };
+
+  const handleRestart = () => {
+    initEngine();
+  };
+
+  const handleNextGeneration = () => {
+    initEngine();
+  };
+
+  const handleToggleMute = () => {
+    const muted = SoundSystem.toggleMute();
+    setIsMuted(muted);
+  };
+
+  useEffect(() => {
+    refreshStateFromStorage();
+    return () => {
+      if (engineRef.current) {
+        engineRef.current.destroy();
+      }
+    };
+  }, [refreshStateFromStorage]);
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="relative w-screen h-screen overflow-hidden bg-stone-950 font-sans">
+      {/* 3D Canvas Mount Point */}
+      <div ref={containerRef} id="canvas-container" />
 
-      <div className="ticks"></div>
+      {/* Intro / Start Screen */}
+      {!hasStarted && (
+        <StartModal onStart={handleStartGame} generation={stats.generation} />
+      )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {/* Main Gameplay HUD */}
+      {hasStarted && (
+        <HUD
+          stats={stats}
+          traits={traits}
+          radarEntities={radarEntities}
+          onOpenGenealogy={() => setShowGenealogy(true)}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+        />
+      )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* Mating / Next Generation Modal */}
+      {gameState === 'MATING_SELECT' && engineRef.current && (
+        <MatingModal
+          onNextGeneration={handleNextGeneration}
+          lifespanSeconds={engineRef.current.player.lifespanSeconds}
+        />
+      )}
+
+      {/* Game Over Modal */}
+      {gameState === 'DEAD' && (
+        <GameOverModal
+          reason={deathInfo.reason}
+          lifespanSeconds={deathInfo.lifespan}
+          onRestart={handleRestart}
+          onOpenGenealogy={() => setShowGenealogy(true)}
+        />
+      )}
+
+      {/* Family Tree / Genealogy Modal */}
+      {showGenealogy && (
+        <FamilyTreeModal onClose={() => setShowGenealogy(false)} />
+      )}
+    </div>
+  );
 }
 
-export default App
+export default App;
